@@ -1,165 +1,417 @@
 # ORB-Standalone
 
-A lightweight, modular C++ implementation of **ORB (Oriented FAST and Rotated BRIEF)** for feature detection and binary description.
+A lightweight, modular, dependency-free C++ implementation of **ORB (Oriented FAST and Rotated BRIEF)** for feature detection and binary description.
 
-ORB-Standalone provides a self-contained ORB feature extraction core that can be used with **visual odometry, VIO, SLAM, tracking, image matching, robotics, embedded vision, or academic projects**.
+ORB-Standalone provides a self-contained ORB feature-extraction core designed for **visual odometry, VIO, SLAM, visual tracking, image matching, robotics, embedded vision, and hardware-oriented computer-vision systems**.
 
-The computational core uses native C++ data structures and does not depend on OpenCV or any other computer-vision framework. An optional webcam example uses OpenCV only for camera capture and visualization.
+The computational core is implemented using native C++ data structures and **does not depend on OpenCV or any other computer-vision framework**.
+
+The library accepts an 8-bit grayscale image buffer and produces oriented keypoints with 256-bit binary descriptors.
+
+An optional webcam example uses OpenCV only as an external application layer for camera capture and visualization. **OpenCV is not required by the ORB core.**
 
 ---
 
-## Overview
+## Why ORB-Standalone?
 
-ORB combines:
+Computer-vision frameworks such as OpenCV provide extremely powerful and highly optimized functionality, but they are designed primarily as general-purpose software frameworks.
+
+For embedded, real-time, FPGA, DSP, microcontroller, or custom-vision applications, a complete computer-vision framework can introduce dependencies and software infrastructure that are unnecessary when only a specific algorithm is required.
+
+ORB-Standalone takes a different approach:
+
+```text
+Application / Camera / Sensor
+             │
+             ▼
+      8-bit Grayscale Buffer
+             │
+             ▼
+      ┌──────────────────┐
+      │  ORB-Standalone  │
+      │                  │
+      │ Image Pyramid    │
+      │ FAST             │
+      │ NMS              │
+      │ Distribution     │
+      │ Orientation      │
+      │ BRIEF            │
+      └────────┬─────────┘
+               │
+               ▼
+      Keypoints + Descriptors
+```
+
+The ORB algorithm is isolated from:
+
+* camera drivers
+* GUI frameworks
+* operating-system-specific APIs
+* image containers such as `cv::Mat`
+* computer-vision frameworks
+* visualization systems
+* application-specific code
+
+This makes the computational core easier to integrate, port, optimize, and eventually map to dedicated hardware.
+
+---
+
+# Overview
+
+ORB combines several stages to produce scale-aware and rotation-aware binary image features:
 
 * FAST-based keypoint detection
 * Multi-scale image pyramids
+* Non-maximum suppression
 * Spatial feature distribution
 * Intensity-centroid orientation estimation
-* Rotated BRIEF descriptors
+* Gaussian image smoothing
+* Steered BRIEF descriptors
 
-The output is a set of oriented keypoints and **256-bit binary descriptors** suitable for fast feature matching using Hamming distance.
-
-### Main characteristics
-
-* Pure C++ computational core
-* No OpenCV dependency in the core library
-* 256-bit / 32-byte binary descriptors
-* Multi-scale feature extraction
-* Rotation-aware descriptors
-* Deterministic feature extraction
-* Modular implementation
-* Native image-buffer interface
-* Suitable for desktop and embedded Linux
-* Optional OpenCV webcam demonstration
-* Easy integration with custom cameras and image sources
-
----
-
-## ORB Pipeline
+The resulting features consist of:
 
 ```text
-                Grayscale Image
-                       │
-                       ▼
-              Image Pyramid
-                       │
-                       ▼
-              FAST Keypoints
-                       │
-                       ▼
-          Corner Response / NMS
-                       │
-                       ▼
-          Spatial Feature Distribution
-                       │
-                       ▼
-          Orientation Estimation
-                       │
-                       ▼
-              Image Smoothing
-                       │
-                       ▼
-            Steered BRIEF-256
-                       │
-                       ▼
-        Keypoints + 256-bit Descriptors
+Keypoint
+    ├── x
+    ├── y
+    ├── octave
+    ├── angle
+    ├── response
+    └── scale
+
+Descriptor
+    └── 256 bits / 32 bytes
 ```
 
+The binary descriptors can be compared efficiently using **Hamming distance**.
+
 ---
 
-## Architecture
-
-The library separates image acquisition from feature extraction.
+# ORB Pipeline
 
 ```text
- Camera / Image / Video Source
-              │
-              ▼
-       Grayscale Frame Buffer
-              │
-              ▼
+                 Grayscale Image
+                        │
+                        ▼
+                Image Pyramid
+                        │
+                        ▼
+                 FAST Detection
+                        │
+                        ▼
+                 FAST Scoring
+                        │
+                        ▼
+                 Non-Maximum
+                   Suppression
+                        │
+                        ▼
+             Spatial Distribution
+                        │
+                        ▼
+             Orientation Estimation
+                        │
+                        ▼
+                Image Smoothing
+                        │
+                        ▼
+               Steered BRIEF-256
+                        │
+                        ▼
+          Keypoints + Descriptors
+```
+
+The implementation is modular, so each stage can be independently tested, optimized, replaced, or mapped to another execution platform.
+
+---
+
+# Architecture
+
+ORB-Standalone separates **image acquisition** from **feature extraction**.
+
+```text
+ Camera / Sensor / Image / Video
+                │
+                ▼
+          Image Acquisition
+                │
+                ▼
+       8-bit Grayscale Buffer
+                │
+                ▼
         ┌─────────────────┐
         │  ORB-Standalone │
         │                 │
         │ Image Pyramid   │
         │ FAST Detection  │
+        │ NMS             │
         │ Distribution    │
         │ Orientation     │
         │ BRIEF           │
         └────────┬────────┘
                  │
                  ▼
-       Keypoints + Descriptors
+        Keypoints + Descriptors
                  │
-       ┌─────────┼──────────┐
-       ▼         ▼          ▼
-      VO        VIO        SLAM
-                 │
-            Tracking /
-          Image Matching
+        ┌────────┼─────────┐
+        ▼        ▼         ▼
+       VO       VIO       SLAM
 ```
 
-### Design rule
+## Design Rule
 
-The ORB core **does not access cameras, camera drivers, GUI frameworks, or operating-system-specific capture APIs**.
+The ORB computational core does **not** access:
 
-Your application is responsible for obtaining an image and providing it to the ORB extractor as an 8-bit grayscale image buffer.
+* cameras
+* camera drivers
+* GUI systems
+* display APIs
+* filesystem APIs
+* operating-system-specific capture interfaces
+* OpenCV
 
-This makes the same ORB library usable with different input sources without modifying the extraction algorithm.
+The application provides an image buffer to the extractor.
+
+This allows the same ORB implementation to operate with different image sources without modifying the feature-extraction algorithm.
 
 ---
 
-## Features
+# Main Characteristics
 
-### Multi-Scale Detection
+* Pure C++ computational core
+* **Zero OpenCV dependency in the core**
+* No external computer-vision framework required
+* 256-bit / 32-byte binary descriptors
+* Multi-scale feature extraction
+* Rotation-aware descriptors
+* Deterministic extraction
+* Modular architecture
+* Native image-buffer interface
+* Configurable extraction parameters
+* Spatially distributed features
+* Suitable for desktop and embedded Linux
+* Designed for RTOS and bare-metal porting
+* Suitable for FPGA/HLS-oriented hardware partitioning
+* Optional OpenCV webcam demonstration
+* Easy integration with custom cameras and image sources
 
-The extractor builds an image pyramid to detect features at different image scales.
+---
+
+# Multi-Scale Feature Extraction
+
+The extractor constructs an image pyramid so that features can be detected at multiple image scales.
 
 Default configuration:
 
 | Parameter              |  Default |
 | ---------------------- | -------: |
-| Features               |     1000 |
+| Number of features     |     1000 |
 | Scale factor           |      1.2 |
 | Pyramid levels         |        8 |
-| FAST threshold         |       20 |
+| Initial FAST threshold |       20 |
 | Minimum FAST threshold |        7 |
 | Descriptor size        | 256 bits |
 | Descriptor storage     | 32 bytes |
 
 These parameters can be configured through `ORBSettings`.
 
-### Keypoints
+---
 
-Each detected keypoint contains:
+# FAST Keypoint Detection
 
-* `x`, `y` — image coordinates
-* `octave` — pyramid level
-* `angle` — orientation in degrees
-* `response` — corner response
-* `size` — feature scale
+ORB-Standalone uses the FAST corner detector as its primary keypoint detector.
 
-Coordinates are returned in the original image coordinate system.
-
-### Descriptors
-
-Each keypoint receives a:
+The detector evaluates the standard FAST circular pixel pattern:
 
 ```text
-256-bit binary descriptor
-32 bytes
+             0  1  2
+          15       3
+        14           4
+       13     C       5
+        12           6
+          11       7
+             10 9 8
 ```
 
-Binary descriptors can be compared efficiently using Hamming distance.
+The implementation uses the FAST-9 criterion on the 16-pixel circle.
+
+An adaptive threshold mechanism allows the detector to use:
+
+```text
+Initial threshold
+        │
+        ▼
+      FAST
+        │
+        ├── sufficient features ──► accept
+        │
+        └── insufficient features
+                    │
+                    ▼
+             lower threshold
+                    │
+                    ▼
+              FAST fallback
+```
+
+This helps maintain feature availability in low-contrast image regions.
 
 ---
 
-## OpenCV Independence
+# FAST Scoring and NMS
 
-The **computational ORB core is OpenCV-independent**.
+Detected FAST candidates are scored and filtered using non-maximum suppression.
 
-The following components are implemented using standard C++ and native data structures:
+The implementation uses FAST-based response scoring rather than requiring a separate floating-point Harris response calculation.
+
+This keeps the detector:
+
+* computationally lightweight
+* integer/fixed-point friendly
+* suitable for embedded systems
+* suitable for hardware acceleration
+
+After scoring, non-maximum suppression removes weaker neighboring responses.
+
+---
+
+# Spatial Feature Distribution
+
+Simply selecting the strongest image features can result in features clustering in a small number of highly textured regions.
+
+ORB-Standalone therefore performs spatial feature distribution using hierarchical subdivision.
+
+Conceptually:
+
+```text
+Initial image region
+        │
+        ▼
+    ┌───────┐
+    │       │
+    └───────┘
+        │
+        ▼
+   subdivide regions
+        │
+        ▼
+ ┌───┬───┬───┬───┐
+ │   │   │   │   │
+ ├───┼───┼───┼───┤
+ │   │   │   │   │
+ └───┴───┴───┴───┘
+        │
+        ▼
+ Select strongest feature
+ from terminal regions
+```
+
+The purpose is to obtain a more spatially distributed feature set.
+
+This is particularly useful for visual tracking and visual odometry, where features concentrated in one portion of the image can reduce geometric robustness.
+
+---
+
+# Orientation Estimation
+
+Each selected keypoint is assigned an orientation using the **intensity-centroid method**.
+
+The local image moments are used to estimate the direction of the intensity centroid relative to the keypoint.
+
+Conceptually:
+
+```text
+        Local image patch
+               │
+               ▼
+       Intensity moments
+               │
+          ┌────┴────┐
+          ▼         ▼
+         m10       m01
+          │         │
+          └────┬────┘
+               ▼
+        atan2(m01,m10)
+               │
+               ▼
+        Keypoint angle
+```
+
+The orientation is then used to rotate the BRIEF sampling pattern.
+
+---
+
+# Gaussian Smoothing
+
+Before descriptor generation, the implementation applies a separable fixed-point Gaussian-style smoothing filter.
+
+The filter is implemented using integer/fixed-point arithmetic rather than requiring floating-point image-processing frameworks.
+
+This provides:
+
+* deterministic behavior
+* reduced computational complexity
+* simple memory access
+* suitability for embedded implementations
+* suitability for hardware pipelines
+
+---
+
+# Steered BRIEF Descriptor
+
+Each keypoint receives a **256-bit binary descriptor**.
+
+The descriptor is generated from intensity comparisons between pairs of pixels in a local image patch.
+
+Conceptually:
+
+```text
+             Keypoint
+                 │
+                 ▼
+          Local image patch
+                 │
+                 ▼
+       Rotate sampling pattern
+                 │
+                 ▼
+       256 intensity comparisons
+                 │
+                 ▼
+          256 binary bits
+                 │
+                 ▼
+             32 bytes
+```
+
+The descriptor is rotation-aware because the BRIEF sampling pattern is rotated according to the keypoint orientation.
+
+Descriptors can be compared using Hamming distance:
+
+```text
+Descriptor A
+     XOR
+Descriptor B
+     │
+     ▼
+ Population Count
+     │
+     ▼
+Hamming Distance
+```
+
+A smaller Hamming distance indicates greater descriptor similarity.
+
+---
+
+# OpenCV Independence
+
+## Computational Core
+
+The ORB computational core is **completely independent of OpenCV**.
+
+The following components are implemented using native C++:
 
 ```text
 ORBTypes
@@ -172,70 +424,158 @@ Orientation
 GaussianFilter
 BriefDescriptor
 ORBExtractor
+OrbPattern
 ```
 
-The core library does not include OpenCV headers or link against OpenCV.
+The core contains:
 
-OpenCV is used only by the optional `webcam_demo` application for:
+* no OpenCV headers
+* no `cv::Mat`
+* no OpenCV feature detector
+* no OpenCV descriptor generator
+* no OpenCV image pyramid
+* no OpenCV filtering
+* no OpenCV matcher
 
-* camera capture
-* grayscale conversion
-* visualization
-* GUI/window handling
-* screenshot output
+The core does not link against OpenCV.
 
-Therefore, the ORB library can be built and used on a system without OpenCV.
+The required interface is simply an 8-bit grayscale image buffer.
 
 ---
 
-# Building
+# Why Avoid OpenCV in the Core?
 
-## Requirements
+OpenCV is an excellent general-purpose computer-vision framework and is highly optimized for desktop and server-class processors.
 
-### Core library
+However, a complete computer-vision framework is not always desirable when the target is a constrained or specialized platform.
 
-* C++14-compatible compiler
-* CMake 3.10 or newer
+ORB-Standalone is intended for cases where the application needs **the ORB algorithm itself rather than an entire computer-vision framework**.
 
-### Optional webcam demo
+Advantages of the dependency-free architecture include:
 
-* OpenCV 3.x or 4.x
-* A working camera supported by OpenCV
+### Smaller software dependency footprint
+
+The computational core requires only standard C++ functionality rather than a large external computer-vision framework.
+
+### Easier platform integration
+
+The extractor communicates through a simple image-buffer interface rather than an operating-system-specific image abstraction.
+
+### Easier embedded deployment
+
+The algorithm can be integrated into embedded software without requiring OpenCV.
+
+### Hardware-oriented design
+
+The major processing stages have explicit data paths and well-defined computational operations, making them easier to analyze for FPGA, DSP, accelerator, or HLS implementations.
+
+### Algorithm ownership
+
+Every major ORB processing stage is directly implemented in the project rather than hidden behind a general-purpose framework API.
 
 ---
 
-## Build the Library
+# Portability and Bare-Metal Design
 
-From the repository root:
+ORB-Standalone is designed with portability as a primary architectural goal.
 
-```bash
-mkdir -p build
-cd build
-cmake ..
-cmake --build . -j$(nproc)
-```
+The ORB core does not inherently require:
 
-The core library will be generated as:
+* Linux
+* Windows
+* macOS
+* a graphical desktop
+* camera drivers
+* USB
+* networking
+* filesystem access
+* OpenCV
+* ROS
+* a display
+* an operating-system camera API
+
+The fundamental interface is:
 
 ```text
-build/liborb_standalone_lib.a
+Input:
+    8-bit grayscale image buffer
+
+Output:
+    Keypoints
+    +
+    256-bit descriptors
 ```
 
-If OpenCV is available, the webcam demonstration will also be built:
+Therefore, the algorithmic core can be adapted to environments such as:
 
 ```text
-build/webcam_demo
+Desktop CPU
+     │
+     ├── Embedded Linux
+     │
+     ├── ARM processor
+     │
+     ├── RTOS
+     │
+     ├── DSP
+     │
+     ├── Microcontroller
+     │
+     └── FPGA / hardware accelerator
 ```
 
-If OpenCV is not installed, the core library still builds normally and the webcam demo is skipped.
+## Bare-Metal Consideration
+
+The core is **designed to be portable to bare-metal and RTOS environments**, because it does not require an operating-system API or OpenCV.
+
+However, the current reference build uses standard C++ facilities and is primarily validated on conventional desktop/Linux systems.
+
+A specific bare-metal target may require:
+
+* replacement or configuration of dynamic memory allocation
+* suitable C++ runtime support
+* platform-specific startup code
+* custom memory management
+* hardware-specific image acquisition
+* appropriate integer/math implementations
+
+Therefore, bare-metal support is an **architectural portability target**, not a claim that every microcontroller can compile the current CMake project unchanged.
+
+---
+
+# Native Image Interface
+
+The ORB extractor accepts an 8-bit single-channel grayscale image through a lightweight native image view.
+
+Example:
+
+```cpp
+NativeImage image(
+    pixels.data(),
+    width,
+    height,
+    stride
+);
+```
+
+The parameters are:
+
+| Parameter | Description                              |
+| --------- | ---------------------------------------- |
+| `data`    | Pointer to grayscale image pixels        |
+| `width`   | Image width in pixels                    |
+| `height`  | Image height in pixels                   |
+| `stride`  | Number of bytes between consecutive rows |
+
+The image buffer is supplied by the application.
+
+The ORB extractor does not require the image to be copied into an OpenCV container.
 
 ---
 
 # Using the ORB Library
 
-The ORB extractor accepts an 8-bit grayscale image stored in a normal memory buffer.
-
-A minimal example:
+Minimal example:
 
 ```cpp
 #include <iostream>
@@ -248,8 +588,8 @@ int main()
 {
     using namespace ORB_Standalone;
 
-    // Configure ORB.
     ORBSettings settings;
+
     settings.nFeatures = 1000;
     settings.scaleFactor = 1.2f;
     settings.nLevels = 8;
@@ -258,13 +598,14 @@ int main()
 
     ORBExtractor extractor(settings);
 
-    // Example 640x480 grayscale image.
     const int width = 640;
     const int height = 480;
 
-    std::vector<uint8_t> pixels(width * height, 128);
+    std::vector<uint8_t> pixels(
+        width * height,
+        128
+    );
 
-    // NativeImage does not copy the image.
     NativeImage image(
         pixels.data(),
         width,
@@ -272,7 +613,6 @@ int main()
         width
     );
 
-    // Extract features.
     std::vector<NativeKeyPoint> keypoints;
     std::vector<NativeDescriptor> descriptors;
 
@@ -291,199 +631,460 @@ int main()
 }
 ```
 
-### Important
-
-`NativeImage` is a lightweight view over an existing image buffer.
-
-The constructor arguments are:
-
-```cpp
-NativeImage(
-    data,
-    width,
-    height,
-    stride
-);
-```
-
-where:
-
-* `data` = pointer to grayscale pixel data
-* `width` = image width in pixels
-* `height` = image height in pixels
-* `stride` = number of bytes between consecutive image rows
-
-The image must contain **8-bit single-channel grayscale pixels**.
-
-The ORB core does not require the image to be copied into an OpenCV `cv::Mat`.
-
 ---
 
-# Using Camera or Other Image Sources
+# Camera and Image Sources
 
-Because the ORB core only requires a grayscale image buffer, it can be connected to almost any image source.
+The ORB core does not acquire images itself.
 
-Typical integration looks like:
+The application is responsible for:
+
+1. acquiring an image
+2. converting it to 8-bit grayscale if necessary
+3. providing the image buffer to `NativeImage`
+4. calling `ORBExtractor`
+
+The architecture therefore looks like:
 
 ```text
 Camera / Sensor / File
         │
         ▼
-  Obtain image frame
+   Acquire Frame
         │
         ▼
- Convert to 8-bit grayscale
+Convert to Grayscale
         │
         ▼
-     NativeImage
+  8-bit Image Buffer
+        │
+        ▼
+    NativeImage
         │
         ▼
    ORBExtractor
         │
         ▼
- Keypoints + Descriptors
+Keypoints + Descriptors
 ```
 
-Examples include:
+This makes camera-specific code independent from the ORB algorithm.
 
-### USB Camera
+---
 
-Use OpenCV, V4L2, or another camera API to acquire the frame, convert it to grayscale, and pass the buffer to `NativeImage`.
+# Supported Integration Approaches
 
-### Raspberry Pi / CSI Camera
+## USB Camera
 
-A camera application using `libcamera` or another capture interface can provide the grayscale/Y-plane buffer directly to the ORB extractor.
+A USB camera can be accessed using:
 
-### ROS / ROS 2
+* V4L2
+* OpenCV
+* another camera API
 
-A camera node can convert an incoming image message into the required 8-bit grayscale format and pass its buffer to `NativeImage`.
+The captured image can then be converted to grayscale and passed to ORB-Standalone.
 
-### Image or Video Files
+## Raspberry Pi / CSI Camera
 
-Decode the image/video using your preferred library, convert the frame to grayscale, and pass the resulting buffer to ORB.
+Camera frameworks such as `libcamera` can provide image data to an application.
 
-### Custom Camera or Sensor
+The grayscale/Y-plane buffer can then be passed to the ORB extractor.
 
-Any system capable of providing an 8-bit grayscale image buffer can be connected without changing the ORB implementation.
+## Embedded Camera
 
-This separation allows camera-specific code to remain outside the ORB library.
+A custom embedded camera pipeline can directly provide an 8-bit grayscale buffer.
+
+No OpenCV layer is required.
+
+## ROS / ROS 2
+
+A ROS node can receive an image message, convert it to the required format, and pass the image buffer to ORB-Standalone.
+
+ROS is not required by the ORB core.
+
+## Image and Video Files
+
+Any image/video decoding library can be used externally.
+
+The decoded grayscale frame is then passed to ORB-Standalone.
+
+## Custom Sensors
+
+Any system capable of producing an 8-bit grayscale image buffer can be connected to the extractor.
 
 ---
 
 # Webcam Demo
 
-The repository includes a small OpenCV-based webcam application:
+The repository contains an optional OpenCV-based webcam demonstration:
 
 ```text
 examples/webcam_demo.cpp
 ```
 
-Build it with OpenCV installed:
+The demo uses OpenCV only for:
+
+* camera capture
+* grayscale conversion
+* visualization
+* GUI/window handling
+* annotated output
+
+**This application is not part of the ORB computational core.**
+
+The ORB library itself remains OpenCV-independent.
+
+Build:
 
 ```bash
 mkdir -p build
 cd build
+
 cmake ..
+
 cmake --build . -j$(nproc)
 ```
 
-Run the default camera:
+If OpenCV is available, the webcam demonstration is built.
+
+Run:
 
 ```bash
 ./webcam_demo
 ```
 
-Or select a camera index:
+Select a camera:
 
 ```bash
 ./webcam_demo 1
 ```
 
-You can also specify resolution:
+Specify camera and resolution:
 
 ```bash
 ./webcam_demo 0 1280 720
 ```
 
-The demo displays:
+The demonstration displays:
 
-* live camera feed
 * detected ORB keypoints
 * keypoint orientation
-* pyramid-level visualization
+* pyramid level
 * feature count
 * image resolution
 * ORB processing time
 * processing FPS
 
-### Keyboard Controls
+## Keyboard Controls
 
-| Key   | Action                                            |
-| ----- | ------------------------------------------------- |
-| `ESC` | Exit                                              |
-| `Q`   | Exit                                              |
-| `S`   | Save the current annotated frame and feature data |
-| `D`   | Toggle the information overlay                    |
+| Key   | Action                                |
+| ----- | ------------------------------------- |
+| `ESC` | Exit                                  |
+| `Q`   | Exit                                  |
+| `S`   | Save annotated frame and feature data |
+| `D`   | Toggle information overlay            |
 
-The webcam application is only an example of how to connect a camera to the ORB library. It is **not required** when using the core library.
+---
+
+# Building
+
+## Core Requirements
+
+The core library requires:
+
+* C++14-compatible compiler
+* CMake 3.10 or newer
+
+The core does **not** require OpenCV.
+
+Build:
+
+```bash
+mkdir -p build
+cd build
+
+cmake ..
+
+cmake --build . -j$(nproc)
+```
+
+The static library is generated as:
+
+```text
+build/liborb_standalone_lib.a
+```
+
+---
+
+# Optional Webcam Requirements
+
+The optional webcam demonstration requires:
+
+* OpenCV 3.x or 4.x
+* supported camera device
+
+If OpenCV is not available, the computational core can still be built and used independently.
 
 ---
 
 # Output
 
-The extractor provides:
+The extractor produces:
 
 ```cpp
 std::vector<NativeKeyPoint>
 std::vector<NativeDescriptor>
 ```
 
-A `NativeKeyPoint` contains the location and properties of a detected feature.
+A `NativeKeyPoint` contains:
+
+```text
+x
+y
+octave
+angle
+response
+size
+```
+
+Coordinates are returned in the original image coordinate system.
 
 A `NativeDescriptor` contains:
 
 ```text
-32 bytes = 256 bits
+32 bytes
+=
+256 bits
 ```
 
-The descriptors can be matched using Hamming distance.
+These descriptors are suitable for Hamming-distance matching.
 
-For example, conceptually:
+---
+
+# Determinism
+
+ORB-Standalone is designed to produce deterministic results.
+
+Given:
 
 ```text
-descriptor A
-     XOR
-descriptor B
-     │
-     ▼
- count set bits
-     │
-     ▼
-Hamming distance
+same image
++
+same configuration
++
+same extractor state
 ```
 
-This makes ORB descriptors suitable for fast feature matching.
+the extraction process produces repeatable:
+
+* keypoint locations
+* orientations
+* feature responses
+* pyramid levels
+* descriptor contents
+
+This property is useful for:
+
+* testing
+* embedded implementations
+* hardware verification
+* regression testing
+* FPGA/software comparison
+
+---
+
+# Validation
+
+The implementation has been validated through unit-level, numerical, robustness, and integration testing.
+
+Validation includes:
+
+* image pyramid construction
+* border handling
+* FAST detection
+* FAST scoring
+* non-maximum suppression
+* spatial feature distribution
+* orientation estimation
+* Gaussian filtering
+* BRIEF descriptor generation
+* keypoint coordinate scaling
+* descriptor consistency
+* deterministic repeated extraction
+* different image resolutions
+* low-contrast images
+* noisy images
+* brightness changes
+* contrast changes
+* image transformations
+* frame-to-frame feature matching
+* memory safety
+* repeated extraction
+* OpenCV independence
+
+Reference comparisons have also been performed against OpenCV ORB/FAST behavior for selected image and descriptor tests.
+
+---
+
+# Performance
+
+ORB-Standalone prioritizes:
+
+* algorithmic transparency
+* portability
+* modularity
+* deterministic behavior
+* hardware-oriented implementation
+* minimal external dependencies
+
+It is **not intended to outperform highly optimized desktop OpenCV implementations on a general-purpose CPU**.
+
+For example, desktop OpenCV can use architecture-specific SIMD instructions and multithreading that are not used by the current scalar ORB-Standalone implementation.
+
+A representative 640×480 comparison is:
+
+| Implementation      | Approx. Runtime |
+| ------------------- | --------------: |
+| OpenCV ORB          |         ~5.1 ms |
+| ORB-SLAM3 extractor |       ~18–25 ms |
+| ORB-Standalone      |        ~25.2 ms |
+
+The current implementation therefore trades desktop CPU performance for a simpler, dependency-free computational architecture.
+
+This trade-off is intentional.
+
+The software implementation provides a clean baseline for later optimization and hardware acceleration.
+
+---
+
+# FPGA and Hardware Acceleration
+
+ORB-Standalone is structured so that computationally intensive stages can be analyzed and accelerated independently.
+
+A potential hardware architecture is:
+
+```text
+                  Image Stream
+                       │
+                       ▼
+              ┌────────────────┐
+              │ Image Pyramid  │
+              └───────┬────────┘
+                      │
+                      ▼
+              ┌────────────────┐
+              │ FAST Detector  │
+              │                │
+              │ Parallel       │
+              │ Comparators    │
+              └───────┬────────┘
+                      │
+                      ▼
+              ┌────────────────┐
+              │      NMS       │
+              └───────┬────────┘
+                      │
+                      ▼
+              Feature Candidates
+                      │
+                      ▼
+                 CPU / ARM
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+     Distribution  Orientation  BRIEF
+```
+
+Potential hardware suitability:
+
+| Stage                | Hardware Suitability |
+| -------------------- | -------------------- |
+| Image Pyramid        | High                 |
+| FAST Detection       | Very High            |
+| NMS                  | Very High            |
+| Gaussian Filtering   | Very High            |
+| Orientation          | Moderate–High        |
+| BRIEF                | Moderate–High        |
+| Feature Distribution | Low–Moderate         |
+
+FAST is particularly attractive for hardware acceleration because its local comparisons expose substantial parallelism.
+
+The software implementation therefore provides a useful algorithmic reference before hardware implementation.
+
+---
+
+# Embedded Deployment Philosophy
+
+The project follows a separation between:
+
+```text
+Algorithm
+    │
+    ▼
+ORB-Standalone
+    │
+    ├── Desktop application
+    ├── Embedded Linux
+    ├── RTOS application
+    ├── Custom camera pipeline
+    └── Hardware accelerator
+```
+
+The image acquisition layer can change without changing the ORB algorithm.
+
+For example:
+
+```text
+V4L2
+   │
+   ├──────────────┐
+libcamera         │
+   │              │
+Custom camera     │
+   │              ▼
+             NativeImage
+                 │
+                 ▼
+            ORBExtractor
+```
+
+This separation is important when the same vision algorithm must eventually run on different hardware platforms.
 
 ---
 
 # Applications
 
-ORB-Standalone can be used as a feature-extraction component in:
+ORB-Standalone can serve as a feature-extraction component for:
 
-* Visual Odometry (VO)
-* Visual-Inertial Odometry (VIO)
-* SLAM systems
-* Visual tracking
-* Feature matching
+* Visual Odometry
+* Visual-Inertial Odometry
+* Visual SLAM
+* Feature tracking
+* Image matching
 * Image alignment
 * Image stitching
 * Robotics
 * Embedded computer vision
 * Autonomous systems
-* Academic and research projects
+* FPGA-based vision
+* Hardware accelerators
+* Academic research
 * Custom computer-vision pipelines
 
-The repository provides the **feature extraction layer**. Higher-level systems such as odometry, mapping, pose estimation, or tracking can be built around its output.
+The repository provides the **ORB feature-extraction layer**.
+
+Higher-level systems such as:
+
+* camera tracking
+* pose estimation
+* visual odometry
+* keyframe management
+* mapping
+* loop closure
+* bundle adjustment
+* SLAM
+
+can be built around the output of the extractor.
 
 ---
 
@@ -491,6 +1092,7 @@ The repository provides the **feature extraction layer**. Higher-level systems s
 
 ```text
 ORB-Standalone/
+│
 ├── include/
 │   ├── Atan2.h
 │   ├── Border.h
@@ -512,7 +1114,6 @@ ORB-Standalone/
 │   ├── FeatureDistribution.cpp
 │   ├── GaussianFilter.cpp
 │   ├── ImagePyramid.cpp
-│   ├── ORBExtractor.cpp
 │   └── Orientation.cpp
 │
 ├── examples/
@@ -526,45 +1127,118 @@ ORB-Standalone/
 
 ---
 
-# Validation
+# Design Goals
 
-The implementation has been independently tested at both individual pipeline stages and end-to-end extraction.
+## Modularity
 
-Validation covers:
+Each major stage of ORB is implemented as an independent module.
 
-* image pyramid construction
-* border handling
-* FAST detection
-* feature distribution
-* orientation estimation
-* Gaussian filtering
-* BRIEF descriptor generation
-* keypoint coordinates
-* descriptor consistency
-* deterministic repeated extraction
-* multiple image resolutions
-* different image contrast conditions
-* real webcam frames
+This makes the implementation easier to:
 
-The computational core has also been checked to ensure that it does not depend on OpenCV.
+* test
+* debug
+* optimize
+* replace
+* port
+* accelerate
+
+## Portability
+
+The core uses a native image-buffer interface and avoids operating-system-specific image acquisition.
+
+The architecture is suitable for desktop, embedded, RTOS, and future bare-metal integration.
+
+## Independence
+
+The ORB algorithm does not depend on OpenCV.
+
+Camera acquisition, visualization, and application logic remain outside the computational core.
+
+## Hardware Readiness
+
+The algorithm is divided into explicit processing stages with well-defined data flow, making computational bottlenecks easier to identify for FPGA, DSP, ASIC, or HLS acceleration.
+
+## Practicality
+
+The extractor can be integrated into custom visual-odometry, tracking, robotics, and SLAM systems without requiring a complete computer-vision framework.
 
 ---
 
-# Design Goals
+# Quick Start
 
-ORB-Standalone is designed around four principles:
+Clone the repository:
 
-**Modularity**
-Each major stage of the ORB pipeline is implemented separately.
+```bash
+git clone <repository-url>
 
-**Portability**
-The core uses standard C++ and a simple image-buffer interface, making it suitable for desktop and embedded systems.
+cd ORB-Standalone
+```
 
-**Independence**
-Camera acquisition and visualization remain outside the ORB library.
+Build the core:
 
-**Practicality**
-The library can be directly integrated into existing VO, VIO, SLAM, robotics, or academic projects without adopting a large computer-vision framework.
+```bash
+mkdir build
+cd build
+
+cmake ..
+
+cmake --build . -j$(nproc)
+```
+
+The core library can then be linked into an application.
+
+If OpenCV is installed, the optional webcam demonstration can be run:
+
+```bash
+./webcam_demo
+```
+
+For custom integration:
+
+```cpp
+#include "ORBExtractor.h"
+#include "ORBTypes.h"
+```
+
+Provide an 8-bit grayscale image buffer to `ORBExtractor`.
+
+No OpenCV image container is required.
+
+---
+
+# Project Status
+
+ORB-Standalone currently provides a validated, standalone ORB feature-extraction implementation.
+
+The ORB core is intentionally separated from higher-level vision algorithms.
+
+Current scope:
+
+```text
+Image
+  │
+  ▼
+ORB Feature Extraction
+  │
+  ├── Keypoints
+  └── Descriptors
+```
+
+Future systems can build on this interface:
+
+```text
+ORB
+ │
+ ├── Feature Matching
+ │
+ ├── Visual Odometry
+ │
+ ├── Visual Tracking
+ │
+ └── Visual SLAM
+```
+
+The separation allows the ORB implementation to remain independently testable and reusable.
 
 ---
 
@@ -576,34 +1250,27 @@ See [`LICENSE`](LICENSE) for the complete license text.
 
 ---
 
-## Quick Start
+# Summary
 
-For the shortest path to trying ORB-Standalone:
+ORB-Standalone is a **lightweight, modular, OpenCV-independent implementation of ORB**.
 
-```bash
-git clone <repository-url>
-cd ORB-Standalone
+Its primary design objective is not to compete with highly optimized desktop computer-vision frameworks in raw CPU performance.
 
-mkdir build
-cd build
+Instead, it provides:
 
-cmake ..
-cmake --build . -j$(nproc)
+```text
+        Self-contained ORB
+                │
+        ┌───────┼────────┐
+        ▼       ▼        ▼
+      Desktop Embedded  FPGA
+        │       │        │
+        ▼       ▼        ▼
+       CPU     ARM    Hardware
 ```
 
-If OpenCV is installed:
+The core requires only an image buffer and produces standard ORB-style keypoints and 256-bit binary descriptors.
 
-```bash
-./webcam_demo
-```
+By separating image acquisition from feature extraction, the same computational core can be integrated into different camera, embedded, robotics, and hardware environments.
 
-For integration into your own application, include:
-
-```cpp
-#include "ORBExtractor.h"
-#include "ORBTypes.h"
-```
-
-Then provide an 8-bit grayscale image buffer to `ORBExtractor`.
-
-That's all that is required to use the ORB feature extractor.
+**The goal is simple: implement the algorithm once, control the complete pipeline, and make it portable to wherever the vision system needs to run.**
